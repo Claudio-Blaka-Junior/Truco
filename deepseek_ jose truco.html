@@ -1,0 +1,1761 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎴 Truco 3D - Com Adversário</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+        color: #fff;
+    }
+
+    #game { position: relative; width: 100vw; height: 100vh; }
+    #canvas3d { display: block; width: 100%; height: 100%; }
+
+    #crosshair {
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none; z-index: 5; opacity: 0.5;
+    }
+    #crosshair::before, #crosshair::after {
+        content: ''; position: absolute;
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 0 3px #000;
+    }
+    #crosshair::before { width: 2px; height: 12px; left: -1px; top: -6px; }
+    #crosshair::after { width: 12px; height: 2px; left: -6px; top: -1px; }
+
+    .hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+
+    .score {
+        position: absolute; top: 20px; left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(180deg, rgba(30,20,10,0.95), rgba(10,5,0,0.95));
+        padding: 12px 35px; border-radius: 15px;
+        border: 2px solid #c9a227;
+        font-size: 1.4rem; font-weight: bold;
+        display: flex; gap: 30px; backdrop-filter: blur(10px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,215,0,0.1);
+        letter-spacing: 1px;
+    }
+    .score span { color: #ffd700; }
+    .score .you { color: #4ade80; text-shadow: 0 0 10px #4ade80; }
+    .score .enemy { color: #f87171; text-shadow: 0 0 10px #f87171; }
+
+    .round-info {
+        position: absolute; top: 20px; left: 20px;
+        background: linear-gradient(180deg, rgba(30,20,10,0.9), rgba(10,5,0,0.9));
+        padding: 12px 22px; border-radius: 12px;
+        border: 2px solid #444; font-size: 0.95rem;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+    }
+
+    .truco-call {
+        position: absolute; top: 20px; right: 20px;
+        background: linear-gradient(180deg, rgba(30,20,10,0.9), rgba(10,5,0,0.9));
+        padding: 12px 22px; border-radius: 12px;
+        border: 2px solid #444; font-size: 0.95rem;
+        backdrop-filter: blur(10px); text-align: right;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+    }
+
+    .vira-info {
+        position: absolute; top: 110px; left: 20px;
+        background: linear-gradient(180deg, rgba(30,20,10,0.95), rgba(10,5,0,0.95));
+        padding: 12px; border-radius: 12px;
+        border: 3px solid #ffd700; text-align: center;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.5), inset 0 0 15px rgba(255,215,0,0.1);
+        animation: viraGlow 2s ease-in-out infinite alternate;
+    }
+    @keyframes viraGlow {
+        from { box-shadow: 0 0 20px rgba(255, 215, 0, 0.4); }
+        to { box-shadow: 0 0 35px rgba(255, 215, 0, 0.7); }
+    }
+
+    .vira-info .label {
+        font-size: 0.75rem; color: #ffd700;
+        margin-bottom: 6px; font-weight: bold; letter-spacing: 2px;
+    }
+
+    .vira-card {
+        width: 75px; height: 105px;
+        background: linear-gradient(135deg, #fff 0%, #f0f0f0 100%);
+        border-radius: 8px; position: relative;
+        border: 2px solid #ddd; margin: 0 auto;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    .vira-card .corner {
+        position: absolute; font-weight: bold;
+        font-size: 0.85rem; text-align: center;
+    }
+    .vira-card .corner.top { top: 4px; left: 6px; }
+    .vira-card .corner.bottom { bottom: 4px; right: 6px; transform: rotate(180deg); }
+    .vira-card .suit-big {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 2rem; opacity: 0.9;
+    }
+    .vira-card.red { color: #d32f2f; }
+    .vira-card.black { color: #1a1a1a; }
+
+    .manilha-info {
+        margin-top: 8px; font-size: 0.75rem;
+        color: #ffd700; font-weight: bold;
+    }
+
+    .hand {
+        position: absolute; bottom: 0; left: 50%;
+        transform: translateX(-50%);
+        display: flex; gap: 20px;
+        padding: 0 20px 20px; pointer-events: auto; z-index: 10;
+        perspective: 1200px;
+    }
+
+    .card-3d {
+        width: 130px; height: 190px;
+        background: transparent; cursor: pointer;
+        position: relative;
+        transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s;
+        transform-style: preserve-3d;
+        transform-origin: center bottom;
+        filter: drop-shadow(0 15px 20px rgba(0,0,0,0.7));
+    }
+    .card-3d:hover:not(.disabled) {
+        transform: translateY(-40px) rotateX(5deg) scale(1.05);
+        filter: drop-shadow(0 25px 30px rgba(255,215,0,0.4)) brightness(1.15);
+    }
+    .card-3d.disabled {
+        opacity: 0.55; cursor: not-allowed; pointer-events: none;
+        filter: drop-shadow(0 15px 20px rgba(0,0,0,0.7)) brightness(0.7);
+    }
+    .card-3d.is-manilha {
+        filter: drop-shadow(0 15px 25px rgba(255,215,0,0.9)) brightness(1.1);
+    }
+    .card-3d.is-manilha::before {
+        content: '⭐ MANILHA';
+        position: absolute; top: -12px; left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(180deg, #ffd700, #c9a227);
+        color: #000; font-size: 0.6rem; font-weight: bold;
+        padding: 3px 10px; border-radius: 10px;
+        letter-spacing: 1px; z-index: 3;
+        box-shadow: 0 3px 10px rgba(255,215,0,0.7);
+        white-space: nowrap;
+    }
+
+    .card-face {
+        width: 100%; height: 100%;
+        background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 50%, #e8e8e8 100%);
+        border-radius: 12px; border: 2px solid #ddd;
+        position: relative; overflow: hidden;
+        box-shadow: inset 0 0 30px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.1);
+    }
+    .card-face::before {
+        content: ''; position: absolute; inset: 4px;
+        border: 1px solid rgba(0,0,0,0.1);
+        border-radius: 8px; pointer-events: none;
+    }
+    .card-face::after {
+        content: ''; position: absolute; inset: 0;
+        background-image: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(0,0,0,0.015) 2px, rgba(0,0,0,0.015) 4px);
+        pointer-events: none; border-radius: 12px;
+    }
+
+    .card-3d .corner {
+        position: absolute; font-weight: 800;
+        font-size: 1.15rem; line-height: 1; text-align: center;
+        font-family: 'Georgia', serif;
+    }
+    .card-3d .corner.top { top: 10px; left: 10px; }
+    .card-3d .corner.bottom { bottom: 10px; right: 10px; transform: rotate(180deg); }
+    .card-3d .suit-big {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 4rem; opacity: 0.92;
+        text-shadow: 2px 2px 3px rgba(0,0,0,0.15);
+    }
+    .card-3d.red { color: #c62828; }
+    .card-3d.black { color: #111; }
+
+    .actions {
+        position: absolute; bottom: 240px; right: 40px;
+        display: flex; flex-direction: column; gap: 12px;
+        z-index: 10; pointer-events: auto;
+    }
+
+    .btn-action {
+        background: linear-gradient(180deg, #c9a227 0%, #8a6e15 100%);
+        color: #fff; border: 2px solid #ffd700;
+        padding: 14px 28px; border-radius: 12px;
+        font-weight: bold; font-size: 1rem;
+        cursor: pointer; transition: all 0.15s ease;
+        text-transform: uppercase; letter-spacing: 2px;
+        text-shadow: 0 1px 2px #000; min-width: 150px;
+        box-shadow: 0 6px 15px rgba(0,0,0,0.6);
+        font-family: inherit;
+    }
+    .btn-action:hover:not(:disabled) {
+        background: linear-gradient(180deg, #ffd700 0%, #c9a227 100%);
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(255,215,0,0.5);
+    }
+    .btn-action:active:not(:disabled) { transform: translateY(1px); }
+    .btn-action:disabled {
+        opacity: 0.35; cursor: not-allowed;
+        background: linear-gradient(180deg, #555 0%, #333 100%);
+        border-color: #666;
+    }
+    .btn-action.danger {
+        background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%);
+        border-color: #f87171;
+        animation: trucoPulse 1.5s ease-in-out infinite;
+    }
+    .btn-action.danger:hover:not(:disabled) {
+        background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+        animation: none;
+    }
+    @keyframes trucoPulse {
+        0%, 100% { box-shadow: 0 6px 15px rgba(0,0,0,0.6), 0 0 0 0 rgba(220,38,38,0.6); }
+        50% { box-shadow: 0 6px 15px rgba(0,0,0,0.6), 0 0 0 15px rgba(220,38,38,0); }
+    }
+
+    .message {
+        position: absolute; top: 45%; left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(180deg, rgba(30,20,10,0.98), rgba(10,5,0,0.98));
+        padding: 35px 70px; border-radius: 22px;
+        font-size: 2.2rem; font-weight: bold;
+        color: #ffd700;
+        text-shadow: 0 3px 15px #000, 0 0 30px rgba(255,215,0,0.5);
+        border: 3px solid #c9a227;
+        z-index: 20; text-align: center;
+        animation: popIn 0.4s ease-out;
+        pointer-events: none;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.9), 0 0 60px rgba(255,215,0,0.3);
+        letter-spacing: 2px;
+    }
+    @keyframes popIn {
+        from { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+        to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+
+    .btn-reset-fixed {
+        position: absolute; bottom: 20px; right: 20px;
+        background: linear-gradient(180deg, #333, #1a1a1a);
+        border: 2px solid #666; color: #fff;
+        padding: 10px 20px; border-radius: 10px;
+        cursor: pointer; font-weight: bold;
+        z-index: 10; pointer-events: auto;
+        font-family: inherit; transition: 0.15s;
+    }
+    .btn-reset-fixed:hover {
+        background: linear-gradient(180deg, #444, #222);
+        border-color: #999;
+    }
+
+    .vignette {
+        position: absolute; inset: 0; pointer-events: none;
+        background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.75) 100%);
+        z-index: 3;
+    }
+
+    .log {
+        position: absolute; bottom: 100px; left: 20px;
+        background: linear-gradient(180deg, rgba(20,15,10,0.9), rgba(5,3,0,0.9));
+        padding: 12px 18px; border-radius: 12px;
+        font-size: 0.85rem; color: #ddd;
+        max-width: 300px; z-index: 10; line-height: 1.5;
+        border: 2px solid #444; backdrop-filter: blur(10px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+    }
+    .log div { margin-bottom: 3px; }
+    .log .p { color: #4ade80; }
+    .log .e { color: #f87171; }
+    .log .i { color: #ffd700; }
+
+    #loading {
+        position: absolute; inset: 0; background: #000;
+        display: flex; flex-direction: column;
+        justify-content: center; align-items: center;
+        z-index: 100; color: #ffd700;
+        font-size: 1.2rem; letter-spacing: 3px;
+    }
+    #loading .spinner {
+        width: 60px; height: 60px;
+        border: 3px solid #333;
+        border-top-color: #ffd700;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .controls-info {
+        position: absolute; bottom: 20px; left: 20px;
+        background: rgba(0,0,0,0.6);
+        padding: 10px 15px; border-radius: 10px;
+        font-size: 0.75rem; color: #aaa;
+        z-index: 10; border: 1px solid #333;
+    }
+
+    /* Indicador de emoção do adversário */
+    .enemy-emotion {
+        position: absolute;
+        top: 200px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.75);
+        padding: 8px 20px;
+        border-radius: 20px;
+        border: 2px solid #f87171;
+        font-size: 0.9rem;
+        font-weight: bold;
+        color: #f87171;
+        z-index: 5;
+        backdrop-filter: blur(8px);
+        transition: all 0.3s;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    }
+</style>
+</head>
+<body>
+
+<div id="game">
+    <div id="loading">
+        <div class="spinner"></div>
+        CARREGANDO TRUCO 3D...
+    </div>
+
+    <canvas id="canvas3d"></canvas>
+    <div class="vignette"></div>
+    <div id="crosshair"></div>
+
+    <div class="hud">
+        <div class="round-info">
+            <div>🃏 Rodada: <span id="roundNum">1</span> / 3</div>
+            <div>🏆 Vazas: <span class="you" id="youTricks">0</span> - <span class="enemy" id="enemyTricks">0</span></div>
+        </div>
+
+        <div class="score">
+            <div class="you">Você: <span id="youScore">0</span></div>
+            <div style="color:#666">|</div>
+            <div class="enemy">CPU: <span id="enemyScore">0</span></div>
+        </div>
+
+        <div class="truco-call">
+            <div>🔥 Valor da mão: <span id="handValue">1</span></div>
+            <div style="font-size:0.8rem; opacity:0.8" id="trucoStatus">Truco disponível</div>
+        </div>
+
+        <div class="vira-info">
+            <div class="label">🎴 VIRA</div>
+            <div id="viraCard" class="vira-card"></div>
+            <div class="manilha-info">Manilha: <span id="manilhaRank">—</span></div>
+        </div>
+
+        <div class="enemy-emotion" id="enemyEmotion">🤖 Adversário: Neutro</div>
+
+        <div class="actions">
+            <button class="btn-action danger" id="btnTruco">🔥 TRUCO!</button>
+            <button class="btn-action" id="btnAccept">✅ Aceitar</button>
+            <button class="btn-action" id="btnRun">🏃 Correr</button>
+        </div>
+
+        <div class="hand" id="hand"></div>
+
+        <div class="log" id="log"></div>
+
+        <div class="controls-info">
+            🖱️ Clique nas cartas • Mova o mouse para olhar ao redor
+        </div>
+
+        <button class="btn-reset-fixed" id="btnReset">🔄 Reiniciar</button>
+    </div>
+
+    <div class="message" id="message" style="display:none;"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+    // ==================== ELEMENTOS DOM ====================
+    const handEl = document.getElementById('hand');
+    const messageEl = document.getElementById('message');
+    const roundNumEl = document.getElementById('roundNum');
+    const youTricksEl = document.getElementById('youTricks');
+    const enemyTricksEl = document.getElementById('enemyTricks');
+    const youScoreEl = document.getElementById('youScore');
+    const enemyScoreEl = document.getElementById('enemyScore');
+    const handValueEl = document.getElementById('handValue');
+    const trucoStatusEl = document.getElementById('trucoStatus');
+    const viraCardEl = document.getElementById('viraCard');
+    const manilhaRankEl = document.getElementById('manilhaRank');
+    const logEl = document.getElementById('log');
+    const enemyEmotionEl = document.getElementById('enemyEmotion');
+    const btnTruco = document.getElementById('btnTruco');
+    const btnAccept = document.getElementById('btnAccept');
+    const btnRun = document.getElementById('btnRun');
+    const btnReset = document.getElementById('btnReset');
+    const loadingEl = document.getElementById('loading');
+    const canvas = document.getElementById('canvas3d');
+
+    // ==================== ESTADO DO JOGO ====================
+    const GAME = {
+        youScore: 0,
+        enemyScore: 0,
+        round: 1,
+        youTricks: 0,
+        enemyTricks: 0,
+        handValue: 1,
+        trucoCalled: false,
+        trucoAvailable: true,
+        waitingResponse: false,
+        gameOver: false,
+        playerTurn: true,
+        youHand: [],
+        enemyHand: [],
+        youTable: [],
+        enemyTable: [],
+        vira: null,
+        manilhaRank: null,
+        logMessages: [],
+        enemyEmotion: 'neutral' // neutral, confident, worried, angry, happy, bluffing
+    };
+
+    // ==================== CARTAS ====================
+    const SUITS = [
+        { name: 'copas', symbol: '♥', color: 'red' },
+        { name: 'espadas', symbol: '♠', color: 'black' },
+        { name: 'ouros', symbol: '♦', color: 'red' },
+        { name: 'paus', symbol: '♣', color: 'black' }
+    ];
+
+    const RANKS = [
+        { name: '4', baseValue: 1 }, { name: '5', baseValue: 2 },
+        { name: '6', baseValue: 3 }, { name: '7', baseValue: 4 },
+        { name: 'Q', baseValue: 5 }, { name: 'J', baseValue: 6 },
+        { name: 'K', baseValue: 7 }, { name: 'A', baseValue: 8 },
+        { name: '2', baseValue: 9 }, { name: '3', baseValue: 10 }
+    ];
+
+    const MANILHA_ORDER = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3'];
+
+    function getManilhaRank(viraRankName) {
+        const idx = MANILHA_ORDER.indexOf(viraRankName);
+        if (idx === -1) return '4';
+        return MANILHA_ORDER[(idx + 1) % MANILHA_ORDER.length];
+    }
+
+    function createDeck() {
+        const deck = [];
+        for (let s = 0; s < 4; s++) {
+            for (let r = 0; r < RANKS.length; r++) {
+                deck.push({
+                    suit: SUITS[s], rank: RANKS[r],
+                    id: `${SUITS[s].name}_${RANKS[r].name}`
+                });
+            }
+        }
+        return deck;
+    }
+
+    function shuffle(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    function getCardStrength(card) {
+        if (card.rank.name === GAME.manilhaRank) {
+            let suitBonus = 0;
+            switch (card.suit.name) {
+                case 'paus': suitBonus = 40; break;
+                case 'copas': suitBonus = 30; break;
+                case 'espadas': suitBonus = 20; break;
+                case 'ouros': suitBonus = 10; break;
+            }
+            return 100 + suitBonus;
+        }
+        return card.rank.baseValue;
+    }
+
+    function isManilha(card) {
+        return card.rank.name === GAME.manilhaRank;
+    }
+
+    // ==================== THREE.JS SETUP ====================
+    let scene, camera, renderer;
+    let cardsInScene = [];
+    let opponent, opponentGroup;
+    let opponentLeftArm, opponentRightArm;
+    let opponentHead, opponentLeftEye, opponentRightEye, opponentMouth;
+    let opponentLeftHand, opponentRightHand;
+    let targetCamX = 0, targetCamY = 0;
+    let camX = 0, camY = 0;
+    let clock;
+    let opponentAnimState = { 
+        armLiftL: 0, armLiftR: 0, 
+        headTilt: 0, headNod: 0,
+        blinkTimer: 0, isBlinking: false,
+        breathPhase: 0
+    };
+
+    function initThree() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0505);
+        scene.fog = new THREE.Fog(0x0a0505, 10, 30);
+
+        camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 2.8, 5);
+        camera.lookAt(0, 1.2, -2);
+
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas, antialias: true,
+            powerPreference: 'high-performance'
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.15;
+
+        clock = new THREE.Clock();
+
+        setupLights();
+        setupRoom();
+        setupTable();
+        createOpponent();
+
+        window.addEventListener('resize', onResize);
+        window.addEventListener('mousemove', onMouseMove);
+    }
+
+    function setupLights() {
+        const ambient = new THREE.AmbientLight(0x403020, 0.7);
+        scene.add(ambient);
+
+        // Luz principal sobre a mesa
+        const spotLight = new THREE.SpotLight(0xfff5e0, 2.0, 18, Math.PI / 3, 0.5, 2);
+        spotLight.position.set(0, 8, -1);
+        spotLight.target.position.set(0, 0, -2);
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.shadow.camera.near = 1;
+        spotLight.shadow.camera.far = 20;
+        spotLight.shadow.bias = -0.0001;
+        scene.add(spotLight);
+        scene.add(spotLight.target);
+
+        // Luz de preenchimento - frontal
+        const fillLight = new THREE.PointLight(0xffcc88, 0.6, 15);
+        fillLight.position.set(0, 4, 5);
+        scene.add(fillLight);
+
+        // Rim light - destacar o adversário
+        const rimLight = new THREE.PointLight(0xffaa66, 0.8, 12);
+        rimLight.position.set(0, 3, -6);
+        scene.add(rimLight);
+
+        // Luz azulada de fundo (ambiente)
+        const backLight = new THREE.PointLight(0x6688ff, 0.3, 15);
+        backLight.position.set(-4, 4, -5);
+        scene.add(backLight);
+
+        // Lâmpada visível
+        const lampShadeGeo = new THREE.ConeGeometry(1.5, 0.9, 32, 1, true);
+        const lampShadeMat = new THREE.MeshStandardMaterial({
+            color: 0x2a1a0a, emissive: 0xffcc88,
+            emissiveIntensity: 0.35, side: THREE.DoubleSide,
+            metalness: 0.6, roughness: 0.4
+        });
+        const lampShade = new THREE.Mesh(lampShadeGeo, lampShadeMat);
+        lampShade.position.set(0, 5.8, -1);
+        lampShade.rotation.x = Math.PI;
+        scene.add(lampShade);
+
+        const cordGeo = new THREE.CylinderGeometry(0.02, 0.02, 3, 8);
+        const cordMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+        const cord = new THREE.Mesh(cordGeo, cordMat);
+        cord.position.set(0, 7.8, -1);
+        scene.add(cord);
+
+        const bulbGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffeecc });
+        const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+        bulb.position.set(0, 5.5, -1);
+        scene.add(bulb);
+    }
+
+    function setupRoom() {
+        // Chão
+        const floorGeo = new THREE.PlaneGeometry(40, 40);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x1a0f08, roughness: 0.9, metalness: 0.1
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.5;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Tábuas
+        for (let i = -20; i < 20; i++) {
+            const lineGeo = new THREE.PlaneGeometry(0.02, 40);
+            const lineMat = new THREE.MeshBasicMaterial({ 
+                color: 0x000000, transparent: true, opacity: 0.3 
+            });
+            const line = new THREE.Mesh(lineGeo, lineMat);
+            line.rotation.x = -Math.PI / 2;
+            line.position.set(i, -0.49, 0);
+            scene.add(line);
+        }
+
+        // Paredes
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0x0a0806, roughness: 0.95
+        });
+
+        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(40, 20), wallMat);
+        backWall.position.set(0, 6, -10);
+        scene.add(backWall);
+
+        // Quadros decorativos
+        const frameMat = new THREE.MeshStandardMaterial({ 
+            color: 0x4a2a10, roughness: 0.7, metalness: 0.3 
+        });
+        
+        // Quadro 1 - esquerda
+        const frame1 = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.8, 0.1), frameMat);
+        frame1.position.set(-5, 3.5, -9.9);
+        scene.add(frame1);
+        const art1 = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.2, 1.5),
+            new THREE.MeshStandardMaterial({ color: 0x2a5a3a, roughness: 0.8 })
+        );
+        art1.position.set(-5, 3.5, -9.83);
+        scene.add(art1);
+
+        // Quadro 2 - direita
+        const frame2 = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.8, 0.1), frameMat);
+        frame2.position.set(5, 3.5, -9.9);
+        scene.add(frame2);
+        const art2 = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.2, 1.5),
+            new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 })
+        );
+        art2.position.set(5, 3.5, -9.83);
+        scene.add(art2);
+
+        // Placa decorativa "TRUCO"
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 512;
+        signCanvas.height = 256;
+        const sc = signCanvas.getContext('2d');
+        sc.fillStyle = '#2a1a0a';
+        sc.fillRect(0, 0, 512, 256);
+        sc.strokeStyle = '#c9a227';
+        sc.lineWidth = 8;
+        sc.strokeRect(10, 10, 492, 236);
+        sc.fillStyle = '#c9a227';
+        sc.font = 'bold 90px Georgia, serif';
+        sc.textAlign = 'center';
+        sc.textBaseline = 'middle';
+        sc.fillText('TRUCO', 256, 128);
+        
+        const signTexture = new THREE.CanvasTexture(signCanvas);
+        const signMat = new THREE.MeshStandardMaterial({ map: signTexture });
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.08), [
+            new THREE.MeshStandardMaterial({ color: 0x3a2a1a }),
+            new THREE.MeshStandardMaterial({ color: 0x3a2a1a }),
+            new THREE.MeshStandardMaterial({ color: 0x3a2a1a }),
+            new THREE.MeshStandardMaterial({ color: 0x3a2a1a }),
+            new THREE.MeshStandardMaterial({ map: signTexture }),
+            new THREE.MeshStandardMaterial({ color: 0x3a2a1a })
+        ]);
+        sign.position.set(0, 5.5, -9.9);
+        scene.add(sign);
+    }
+
+    function setupTable() {
+        const tableGroup = new THREE.Group();
+
+        // Feltro
+        const feltGeo = new THREE.CylinderGeometry(3.5, 3.5, 0.15, 64);
+        const feltMat = new THREE.MeshStandardMaterial({
+            color: 0x1a5a30, roughness: 0.95, metalness: 0.05
+        });
+        const felt = new THREE.Mesh(feltGeo, feltMat);
+        felt.position.y = 0;
+        felt.receiveShadow = true;
+        felt.castShadow = true;
+        tableGroup.add(felt);
+
+        // Borda de madeira
+        const borderGeo = new THREE.TorusGeometry(3.65, 0.18, 16, 64);
+        const borderMat = new THREE.MeshStandardMaterial({
+            color: 0x5a3a1a, roughness: 0.4, metalness: 0.3
+        });
+        const border = new THREE.Mesh(borderGeo, borderMat);
+        border.rotation.x = Math.PI / 2;
+        border.position.y = 0.05;
+        border.castShadow = true;
+        border.receiveShadow = true;
+        tableGroup.add(border);
+
+        // Anel dourado
+        const goldRingGeo = new THREE.TorusGeometry(3.65, 0.04, 8, 64);
+        const goldMat = new THREE.MeshStandardMaterial({
+            color: 0xc9a227, roughness: 0.3, metalness: 0.9,
+            emissive: 0x4a3505, emissiveIntensity: 0.3
+        });
+        const goldRing = new THREE.Mesh(goldRingGeo, goldMat);
+        goldRing.rotation.x = Math.PI / 2;
+        goldRing.position.y = 0.22;
+        tableGroup.add(goldRing);
+
+        // Pernas
+        const legMat = new THREE.MeshStandardMaterial({
+            color: 0x3a2010, roughness: 0.5, metalness: 0.2
+        });
+        for (let i = 0; i < 4; i++) {
+            const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1, 16), legMat);
+            leg.position.set(Math.cos(angle) * 2.9, -0.55, Math.sin(angle) * 2.9);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            tableGroup.add(leg);
+        }
+
+        scene.add(tableGroup);
+
+        // Tapete
+        const rugGeo = new THREE.CircleGeometry(5.5, 64);
+        const rugMat = new THREE.MeshStandardMaterial({ color: 0x3a1508, roughness: 0.95 });
+        const rug = new THREE.Mesh(rugGeo, rugMat);
+        rug.rotation.x = -Math.PI / 2;
+        rug.position.y = -0.48;
+        rug.receiveShadow = true;
+        scene.add(rug);
+    }
+
+    // ==================== ADVERSÁRIO 3D ====================
+    function createOpponent() {
+        opponentGroup = new THREE.Group();
+        opponentGroup.position.set(0, 0, -4.5);
+
+        // ============ CORPO / TORSO ============
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x2a3a5a, // camisa azul escura
+            roughness: 0.85,
+            metalness: 0.05
+        });
+        
+        const torsoGeo = new THREE.CylinderGeometry(0.55, 0.7, 1.2, 16);
+        const torso = new THREE.Mesh(torsoGeo, bodyMat);
+        torso.position.y = 0.9;
+        torso.castShadow = true;
+        torso.receiveShadow = true;
+        opponentGroup.add(torso);
+
+        // Detalhe da camisa (gola)
+        const collarGeo = new THREE.TorusGeometry(0.28, 0.06, 8, 16);
+        const collarMat = new THREE.MeshStandardMaterial({ color: 0x1a2a4a, roughness: 0.7 });
+        const collar = new THREE.Mesh(collarGeo, collarMat);
+        collar.rotation.x = Math.PI / 2;
+        collar.position.y = 1.5;
+        opponentGroup.add(collar);
+
+        // Botões da camisa
+        for (let i = 0; i < 3; i++) {
+            const buttonGeo = new THREE.SphereGeometry(0.04, 8, 8);
+            const buttonMat = new THREE.MeshStandardMaterial({ 
+                color: 0xdddddd, metalness: 0.6, roughness: 0.3 
+            });
+            const button = new THREE.Mesh(buttonGeo, buttonMat);
+            button.position.set(0, 1.35 - i * 0.25, 0.55);
+            opponentGroup.add(button);
+        }
+
+        // ============ CABEÇA ============
+        const headGroup = new THREE.Group();
+        headGroup.position.y = 1.85;
+
+        // Crânio
+        const headGeo = new THREE.SphereGeometry(0.4, 32, 32);
+        const headMat = new THREE.MeshStandardMaterial({
+            color: 0xc98a5a, // pele
+            roughness: 0.7,
+            metalness: 0.05
+        });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.scale.set(1, 1.15, 1.05);
+        head.castShadow = true;
+        head.receiveShadow = true;
+        headGroup.add(head);
+
+        // Cabelo
+        const hairGeo = new THREE.SphereGeometry(0.42, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.55);
+        const hairMat = new THREE.MeshStandardMaterial({
+            color: 0x1a0f0a, roughness: 0.95
+        });
+        const hair = new THREE.Mesh(hairGeo, hairMat);
+        hair.position.y = 0.05;
+        hair.scale.set(1, 1.1, 1.05);
+        headGroup.add(hair);
+
+        // Olhos
+        const eyeWhiteGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const eyeWhiteMat = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff, roughness: 0.3 
+        });
+        
+        const leftEyeGroup = new THREE.Group();
+        leftEyeGroup.position.set(-0.14, 0.05, 0.36);
+        const leftEyeWhite = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+        leftEyeWhite.scale.set(1, 1.1, 0.5);
+        leftEyeGroup.add(leftEyeWhite);
+
+        const pupilGeo = new THREE.SphereGeometry(0.045, 12, 12);
+        const pupilMat = new THREE.MeshStandardMaterial({ 
+            color: 0x1a0a00, roughness: 0.2 
+        });
+        const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        leftPupil.position.z = 0.06;
+        leftEyeGroup.add(leftPupil);
+        headGroup.add(leftEyeGroup);
+
+        const rightEyeGroup = new THREE.Group();
+        rightEyeGroup.position.set(0.14, 0.05, 0.36);
+        const rightEyeWhite = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+        rightEyeWhite.scale.set(1, 1.1, 0.5);
+        rightEyeGroup.add(rightEyeWhite);
+
+        const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        rightPupil.position.z = 0.06;
+        rightEyeGroup.add(rightPupil);
+        headGroup.add(rightEyeGroup);
+
+        opponentLeftEye = leftEyeGroup;
+        opponentRightEye = rightEyeGroup;
+
+        // Sobrancelhas
+        const browGeo = new THREE.BoxGeometry(0.12, 0.025, 0.02);
+        const browMat = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
+        
+        const leftBrow = new THREE.Mesh(browGeo, browMat);
+        leftBrow.position.set(-0.14, 0.14, 0.36);
+        leftBrow.rotation.z = 0.15;
+        headGroup.add(leftBrow);
+
+        const rightBrow = new THREE.Mesh(browGeo, browMat);
+        rightBrow.position.set(0.14, 0.14, 0.36);
+        rightBrow.rotation.z = -0.15;
+        headGroup.add(rightBrow);
+
+        // Nariz
+        const noseGeo = new THREE.ConeGeometry(0.06, 0.15, 8);
+        const noseMat = new THREE.MeshStandardMaterial({ 
+            color: 0xc9805a, roughness: 0.7 
+        });
+        const nose = new THREE.Mesh(noseGeo, noseMat);
+        nose.position.set(0, -0.02, 0.4);
+        nose.rotation.x = Math.PI / 2;
+        headGroup.add(nose);
+
+        // Boca
+        const mouthGeo = new THREE.BoxGeometry(0.18, 0.025, 0.02);
+        const mouthMat = new THREE.MeshStandardMaterial({ color: 0x8a3a3a });
+        const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+        mouth.position.set(0, -0.16, 0.38);
+        headGroup.add(mouth);
+
+        opponentMouth = mouth;
+        opponentHead = headGroup;
+        opponentGroup.add(headGroup);
+
+        // Pescoço
+        const neckGeo = new THREE.CylinderGeometry(0.15, 0.18, 0.15, 16);
+        const neck = new THREE.Mesh(neckGeo, headMat);
+        neck.position.y = 1.55;
+        opponentGroup.add(neck);
+
+        // ============ BRAÇOS ============
+        const armMat = new THREE.MeshStandardMaterial({
+            color: 0x2a3a5a, roughness: 0.85
+        });
+        const skinMat = new THREE.MeshStandardMaterial({
+            color: 0xc98a5a, roughness: 0.7
+        });
+
+        // Braço esquerdo (do ponto de vista do jogador, é o braço direito do adversário)
+        const leftArmGroup = new THREE.Group();
+        leftArmGroup.position.set(-0.6, 1.4, 0);
+
+        // Braço superior (manga)
+        const leftUpperArmGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.7, 12);
+        const leftUpperArm = new THREE.Mesh(leftUpperArmGeo, armMat);
+        leftUpperArm.position.y = -0.35;
+        leftUpperArm.castShadow = true;
+        leftArmGroup.add(leftUpperArm);
+
+        // Antebraço (pele)
+        const leftForearmGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.6, 12);
+        const leftForearm = new THREE.Mesh(leftForearmGeo, skinMat);
+        leftForearm.position.y = -0.95;
+        leftForearm.castShadow = true;
+        leftArmGroup.add(leftForearm);
+
+        // Mão esquerda
+        const handGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        const leftHand = new THREE.Mesh(handGeo, skinMat);
+        leftHand.position.y = -1.3;
+        leftHand.scale.set(1, 0.8, 1.2);
+        leftHand.castShadow = true;
+        leftArmGroup.add(leftHand);
+        opponentLeftHand = leftHand;
+
+        // Rotacionar braço para vir para frente (apoiado na mesa)
+        leftArmGroup.rotation.x = -Math.PI * 0.35;
+        leftArmGroup.rotation.z = 0.15;
+        opponentGroup.add(leftArmGroup);
+        opponentLeftArm = leftArmGroup;
+
+        // Braço direito
+        const rightArmGroup = new THREE.Group();
+        rightArmGroup.position.set(0.6, 1.4, 0);
+
+        const rightUpperArmGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.7, 12);
+        const rightUpperArm = new THREE.Mesh(rightUpperArmGeo, armMat);
+        rightUpperArm.position.y = -0.35;
+        rightUpperArm.castShadow = true;
+        rightArmGroup.add(rightUpperArm);
+
+        const rightForearmGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.6, 12);
+        const rightForearm = new THREE.Mesh(rightForearmGeo, skinMat);
+        rightForearm.position.y = -0.95;
+        rightForearm.castShadow = true;
+        rightArmGroup.add(rightForearm);
+
+        const rightHand = new THREE.Mesh(handGeo, skinMat);
+        rightHand.position.y = -1.3;
+        rightHand.scale.set(1, 0.8, 1.2);
+        rightHand.castShadow = true;
+        rightArmGroup.add(rightHand);
+        opponentRightHand = rightHand;
+
+        rightArmGroup.rotation.x = -Math.PI * 0.35;
+        rightArmGroup.rotation.z = -0.15;
+        opponentGroup.add(rightArmGroup);
+        opponentRightArm = rightArmGroup;
+
+        // Adicionar grupo do adversário à cena
+        scene.add(opponentGroup);
+        opponent = opponentGroup;
+
+        // Cadeira do adversário
+        const chairMat = new THREE.MeshStandardMaterial({ 
+            color: 0x3a2010, roughness: 0.6, metalness: 0.2 
+        });
+        
+        // Assento
+        const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 1), chairMat);
+        chairSeat.position.set(0, 0.55, -5.3);
+        chairSeat.castShadow = true;
+        scene.add(chairSeat);
+
+        // Encosto
+        const chairBack = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.1), chairMat);
+        chairBack.position.set(0, 1.15, -5.75);
+        chairBack.castShadow = true;
+        scene.add(chairBack);
+    }
+
+    // ==================== EMOÇÃO DO ADVERSÁRIO ====================
+    function setEnemyEmotion(emotion) {
+        GAME.enemyEmotion = emotion;
+        const labels = {
+            neutral: '🤖 Adversário: Neutro',
+            confident: '😎 Adversário: Confiante',
+            worried: '😰 Adversário: Preocupado',
+            angry: '😠 Adversário: Irritado',
+            happy: '😄 Adversário: Feliz',
+            bluffing: '😏 Adversário: Blefando'
+        };
+        enemyEmotionEl.textContent = labels[emotion] || labels.neutral;
+        
+        // Cor da borda baseada na emoção
+        const colors = {
+            neutral: '#f87171',
+            confident: '#facc15',
+            worried: '#60a5fa',
+            angry: '#dc2626',
+            happy: '#4ade80',
+            bluffing: '#a855f7'
+        };
+        enemyEmotionEl.style.borderColor = colors[emotion] || colors.neutral;
+        enemyEmotionEl.style.color = colors[emotion] || colors.neutral;
+    }
+
+    function updateOpponentFace() {
+        if (!opponentHead) return;
+        
+        // Blink
+        opponentAnimState.blinkTimer += 0.02;
+        if (opponentAnimState.blinkTimer > 3) {
+            opponentAnimState.isBlinking = true;
+            if (opponentAnimState.blinkTimer > 3.15) {
+                opponentAnimState.isBlinking = false;
+                opponentAnimState.blinkTimer = 0;
+            }
+        }
+        
+        const eyeScaleY = opponentAnimState.isBlinking ? 0.05 : 1;
+        if (opponentLeftEye) {
+            opponentLeftEye.children[0].scale.y = eyeScaleY;
+            opponentRightEye.children[0].scale.y = eyeScaleY;
+        }
+
+        // Expressão baseada na emoção
+        if (opponentMouth) {
+            const mood = GAME.enemyEmotion;
+            if (mood === 'happy') {
+                opponentMouth.scale.set(1.3, 1.5, 1);
+                opponentMouth.position.y = -0.15;
+            } else if (mood === 'worried' || mood === 'angry') {
+                opponentMouth.scale.set(0.9, 0.8, 1);
+                opponentMouth.position.y = -0.18;
+            } else if (mood === 'confident' || mood === 'bluffing') {
+                opponentMouth.scale.set(1.1, 1, 1);
+                opponentMouth.rotation.z = 0.15;
+            } else {
+                opponentMouth.scale.set(1, 1, 1);
+                opponentMouth.rotation.z = 0;
+                opponentMouth.position.y = -0.16;
+            }
+        }
+
+        // Respiração (sobe e desce o corpo)
+        opponentAnimState.breathPhase += 0.02;
+        const breathOffset = Math.sin(opponentAnimState.breathPhase) * 0.015;
+        opponentGroup.position.y = breathOffset;
+    }
+
+    // ==================== ANIMAÇÕES DO ADVERSÁRIO ====================
+    function animateOpponentPlayCard(fromSide, callback) {
+        // fromSide: 'left' ou 'right'
+        const arm = fromSide === 'left' ? opponentLeftArm : opponentRightArm;
+        const targetLift = fromSide === 'left' ? 1.6 : 1.6;
+        const startRotX = arm.rotation.x;
+        const duration = 800;
+        const startTime = performance.now();
+
+        // Levantar braço e jogar carta
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            const t = Math.min(elapsed / duration, 1);
+            
+            // Fase 1: levantar (0-0.4)
+            // Fase 2: jogar (0.4-0.7)
+            // Fase 3: voltar (0.7-1)
+            
+            let armLift;
+            if (t < 0.4) {
+                armLift = (t / 0.4) * targetLift;
+            } else if (t < 0.7) {
+                armLift = targetLift - ((t - 0.4) / 0.3) * targetLift * 1.5;
+            } else {
+                armLift = -targetLift * 0.5 + ((t - 0.7) / 0.3) * targetLift * 0.5;
+            }
+            
+            arm.rotation.x = startRotX - armLift;
+
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                arm.rotation.x = startRotX;
+                if (callback) callback();
+            }
+        }
+        animate();
+    }
+
+    function animateOpponentHeadNod() {
+        const startY = opponentHead.rotation.x;
+        const duration = 600;
+        const startTime = performance.now();
+
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            const t = Math.min(elapsed / duration, 1);
+            opponentHead.rotation.x = Math.sin(t * Math.PI * 2) * 0.15;
+            if (t < 1) requestAnimationFrame(animate);
+            else opponentHead.rotation.x = startY;
+        }
+        animate();
+    }
+
+    // ==================== CARTAS 3D ====================
+    function createCard3D(card, x, z, faceUp = true) {
+        const group = new THREE.Group();
+        const cardGeo = new THREE.BoxGeometry(0.7, 0.012, 1);
+        
+        const faceMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, roughness: 0.5, metalness: 0.05
+        });
+        const backMat = new THREE.MeshStandardMaterial({
+            color: 0x1a2a5a, roughness: 0.6, metalness: 0.1
+        });
+        const edgeMat = new THREE.MeshStandardMaterial({
+            color: 0xdddddd, roughness: 0.7
+        });
+
+        const materials = [
+            edgeMat, edgeMat,
+            faceUp ? faceMat : backMat,
+            faceUp ? backMat : faceMat,
+            edgeMat, edgeMat
+        ];
+
+        const cardMesh = new THREE.Mesh(cardGeo, materials);
+        cardMesh.castShadow = true;
+        cardMesh.receiveShadow = true;
+        group.add(cardMesh);
+
+        if (faceUp) {
+            const texture = createCardTexture(card);
+            const decalMat = new THREE.MeshStandardMaterial({
+                map: texture, transparent: true, roughness: 0.5,
+                polygonOffset: true, polygonOffsetFactor: -1
+            });
+            const decalGeo = new THREE.PlaneGeometry(0.68, 0.98);
+            const decal = new THREE.Mesh(decalGeo, decalMat);
+            decal.rotation.x = -Math.PI / 2;
+            decal.position.y = 0.007;
+            group.add(decal);
+        }
+
+        group.position.set(x, 0.11, z);
+
+        if (!faceUp) {
+            group.rotation.x = Math.PI;
+            group.position.y = 0.13;
+        }
+
+        return group;
+    }
+
+    function createCardTexture(card) {
+        const canvas2d = document.createElement('canvas');
+        canvas2d.width = 256;
+        canvas2d.height = 384;
+        const c = canvas2d.getContext('2d');
+
+        c.fillStyle = '#ffffff';
+        c.fillRect(0, 0, 256, 384);
+
+        c.strokeStyle = '#e0e0e0';
+        c.lineWidth = 4;
+        c.strokeRect(2, 2, 252, 380);
+
+        const color = card.suit.color === 'red' ? '#c62828' : '#111111';
+        c.fillStyle = color;
+
+        c.font = 'bold 52px Georgia, serif';
+        c.textAlign = 'left';
+        c.textBaseline = 'top';
+        c.fillText(card.rank.name, 18, 15);
+
+        c.font = '48px Arial';
+        c.fillText(card.suit.symbol, 22, 70);
+
+        c.save();
+        c.translate(238, 369);
+        c.rotate(Math.PI);
+        c.font = 'bold 52px Georgia, serif';
+        c.textAlign = 'left';
+        c.textBaseline = 'top';
+        c.fillText(card.rank.name, 0, 0);
+        c.font = '48px Arial';
+        c.fillText(card.suit.symbol, 4, 55);
+        c.restore();
+
+        c.font = 'bold 140px Arial';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.globalAlpha = 0.92;
+        c.fillText(card.suit.symbol, 128, 200);
+        c.globalAlpha = 1;
+
+        const texture = new THREE.CanvasTexture(canvas2d);
+        texture.anisotropy = 16;
+        return texture;
+    }
+
+    function animateCardToTable(card, startX, startZ, startY, endX, endZ, faceUp, callback) {
+        const cardGroup = createCard3D(card, startX, startZ, faceUp);
+        cardGroup.position.y = startY;
+        scene.add(cardGroup);
+
+        const startTime = performance.now();
+        const duration = 500;
+
+        function animateCard() {
+            const elapsed = performance.now() - startTime;
+            const t = Math.min(elapsed / duration, 1);
+            const ease = 1 - Math.pow(1 - t, 3);
+
+            cardGroup.position.x = startX + (endX - startX) * ease;
+            cardGroup.position.z = startZ + (endZ - startZ) * ease;
+            cardGroup.position.y = 0.5 + Math.sin(t * Math.PI) * 1.5;
+            
+            cardGroup.rotation.z = Math.sin(t * Math.PI) * 0.5;
+            cardGroup.rotation.x = (faceUp ? 0 : Math.PI) + Math.sin(t * Math.PI) * 0.3;
+
+            if (t < 1) {
+                requestAnimationFrame(animateCard);
+            } else {
+                cardGroup.position.y = 0.11;
+                cardGroup.rotation.set(faceUp ? 0 : Math.PI, 0, 0);
+                if (callback) callback(cardGroup);
+            }
+        }
+
+        animateCard();
+        return cardGroup;
+    }
+
+    // ==================== CONTROLES ====================
+    function onMouseMove(e) {
+        const x = (e.clientX / window.innerWidth) - 0.5;
+        const y = (e.clientY / window.innerHeight) - 0.5;
+        targetCamX = x * 1.5;
+        targetCamY = y * 0.6;
+
+        // Rastreamento dos olhos do adversário (segue o mouse)
+        if (opponentLeftEye && opponentRightEye) {
+            const eyeTrackX = x * 0.03;
+            const eyeTrackY = -y * 0.03;
+            opponentLeftEye.children[1].position.x = eyeTrackX;
+            opponentLeftEye.children[1].position.y = eyeTrackY;
+            opponentRightEye.children[1].position.x = eyeTrackX;
+            opponentRightEye.children[1].position.y = eyeTrackY;
+        }
+
+        // Cabeça segue levemente o mouse
+        if (opponentHead) {
+            opponentHead.rotation.y = x * 0.3;
+            opponentHead.rotation.x = -y * 0.15;
+        }
+    }
+
+    function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // ==================== RENDERIZAÇÃO HTML ====================
+    function renderVira() {
+        if (!GAME.vira) {
+            viraCardEl.innerHTML = '';
+            viraCardEl.className = 'vira-card';
+            manilhaRankEl.textContent = '—';
+            return;
+        }
+        const card = GAME.vira;
+        viraCardEl.className = `vira-card ${card.suit.color}`;
+        viraCardEl.innerHTML = `
+            <div class="corner top">
+                <div>${card.rank.name}</div>
+                <div style="font-size:0.7rem">${card.suit.symbol}</div>
+            </div>
+            <div class="suit-big">${card.suit.symbol}</div>
+            <div class="corner bottom">
+                <div>${card.rank.name}</div>
+                <div style="font-size:0.7rem">${card.suit.symbol}</div>
+            </div>
+        `;
+        manilhaRankEl.textContent = GAME.manilhaRank + ' (todas)';
+    }
+
+    function renderHand() {
+        handEl.innerHTML = '';
+        GAME.youHand.forEach((card, index) => {
+            const cardEl = document.createElement('div');
+            const manilha = isManilha(card);
+            cardEl.className = `card-3d ${card.suit.color}${manilha ? ' is-manilha' : ''}`;
+            if (!GAME.playerTurn || GAME.gameOver) cardEl.classList.add('disabled');
+
+            cardEl.innerHTML = `
+                <div class="card-face">
+                    <div class="corner top">
+                        <div>${card.rank.name}</div>
+                        <div style="font-size:0.9rem">${card.suit.symbol}</div>
+                    </div>
+                    <div class="suit-big">${card.suit.symbol}</div>
+                    <div class="corner bottom">
+                        <div>${card.rank.name}</div>
+                        <div style="font-size:0.9rem">${card.suit.symbol}</div>
+                    </div>
+                </div>
+            `;
+
+            cardEl.addEventListener('click', () => playCard(index));
+            handEl.appendChild(cardEl);
+        });
+    }
+
+    function updateHUD() {
+        roundNumEl.textContent = GAME.round;
+        youTricksEl.textContent = GAME.youTricks;
+        enemyTricksEl.textContent = GAME.enemyTricks;
+        youScoreEl.textContent = GAME.youScore;
+        enemyScoreEl.textContent = GAME.enemyScore;
+        handValueEl.textContent = GAME.handValue;
+
+        if (GAME.trucoCalled) {
+            trucoStatusEl.textContent = `🔥 Truco! Mão vale ${GAME.handValue}`;
+        } else if (GAME.trucoAvailable && GAME.playerTurn) {
+            trucoStatusEl.textContent = 'Truco disponível';
+        } else {
+            trucoStatusEl.textContent = '—';
+        }
+
+        btnTruco.disabled = !GAME.trucoAvailable || GAME.trucoCalled || !GAME.playerTurn || GAME.gameOver;
+        btnAccept.disabled = !GAME.waitingResponse;
+        btnRun.disabled = !GAME.waitingResponse;
+    }
+
+    function addLog(text, type = '') {
+        GAME.logMessages.push({ text, type });
+        if (GAME.logMessages.length > 5) GAME.logMessages.shift();
+        renderLog();
+    }
+
+    function renderLog() {
+        logEl.innerHTML = GAME.logMessages.map(m => 
+            `<div class="${m.type}">${m.text}</div>`
+        ).join('');
+    }
+
+    function showMessage(text, duration = 2000) {
+        messageEl.textContent = text;
+        messageEl.style.display = 'block';
+        if (duration > 0) {
+            setTimeout(() => {
+                messageEl.style.display = 'none';
+            }, duration);
+        }
+    }
+
+    // ==================== LÓGICA DO JOGO ====================
+    function startGame() {
+        GAME.youScore = 0;
+        GAME.enemyScore = 0;
+        GAME.round = 1;
+        GAME.gameOver = false;
+        GAME.logMessages = [];
+        clearCardsFromScene();
+        startRound();
+    }
+
+    function clearCardsFromScene() {
+        cardsInScene.forEach(c => scene.remove(c));
+        cardsInScene = [];
+    }
+
+    function startRound() {
+        GAME.youTricks = 0;
+        GAME.enemyTricks = 0;
+        GAME.handValue = 1;
+        GAME.trucoCalled = false;
+        GAME.trucoAvailable = true;
+        GAME.waitingResponse = false;
+        GAME.playerTurn = true;
+        GAME.youTable = [];
+        GAME.enemyTable = [];
+
+        clearCardsFromScene();
+        setEnemyEmotion('neutral');
+
+        const deck = shuffle(createDeck());
+        const allCards = deck.slice();
+        GAME.vira = allCards.pop();
+        GAME.manilhaRank = getManilhaRank(GAME.vira.rank.name);
+        GAME.youHand = allCards.slice(0, 3);
+        GAME.enemyHand = allCards.slice(3, 6);
+
+        addLog(`🎴 Rodada ${GAME.round}`, 'i');
+        addLog(`Vira: ${GAME.vira.rank.name}${GAME.vira.suit.symbol} → Manilha: ${GAME.manilhaRank}`, 'i');
+
+        // Vira na mesa 3D (à direita)
+        const viraGroup = createCard3D(GAME.vira, 2.5, -1.5, true);
+        scene.add(viraGroup);
+        cardsInScene.push(viraGroup);
+
+        // Cartas do adversário - seguradas na mão (visíveis como cartas viradas)
+        // Colocamos em um leque ao lado do adversário
+        for (let i = 0; i < GAME.enemyHand.length; i++) {
+            const angle = -0.3 + i * 0.3;
+            const x = -1.2 + i * 0.4;
+            const card = createCard3D(GAME.enemyHand[i], x, -2.5, false);
+            card.rotation.y = angle;
+            card.position.y = 1.3;
+            scene.add(card);
+            cardsInScene.push(card);
+        }
+
+        updateHUD();
+        renderVira();
+        renderHand();
+        showMessage(`🃏 RODADA ${GAME.round} - MÃO VALE ${GAME.handValue}`, 1500);
+    }
+
+    function playCard(index) {
+        if (!GAME.playerTurn || GAME.gameOver) return;
+        if (index < 0 || index >= GAME.youHand.length) return;
+
+        const card = GAME.youHand.splice(index, 1)[0];
+        GAME.youTable.push(card);
+        GAME.playerTurn = false;
+
+        const manilhaText = isManilha(card) ? ' ⭐MANILHA' : '';
+        addLog(`Você: ${card.rank.name}${card.suit.symbol}${manilhaText}`, 'p');
+
+        renderHand();
+        updateHUD();
+
+        // Animar carta voando para a mesa (do lado do jogador)
+        const animCard = animateCardToTable(card, -0.6, 3, 1.5, -0.6, 0, true, null);
+        cardsInScene.push(animCard);
+
+        // Adversário reage - emoção baseada na carta jogada
+        const playerStrength = getCardStrength(card);
+        setTimeout(() => {
+            if (playerStrength >= 100) {
+                setEnemyEmotion('worried');
+            } else if (playerStrength >= 9) {
+                setEnemyEmotion('neutral');
+            } else {
+                setEnemyEmotion('confident');
+            }
+        }, 300);
+
+        setTimeout(() => enemyPlay(), 1100);
+    }
+
+    function enemyPlay() {
+        if (GAME.gameOver) return;
+        if (GAME.enemyHand.length === 0) return;
+
+        const playerCard = GAME.youTable[GAME.youTable.length - 1];
+        const playerStrength = getCardStrength(playerCard);
+        const playerHasManilha = isManilha(playerCard);
+
+        let cardIndex = 0;
+
+        if (playerHasManilha) {
+            // Se o jogador jogou manilha, adversário joga a mais fraca
+            let worstIdx = 0, worstVal = 999;
+            GAME.enemyHand.forEach((c, i) => {
+                const v = getCardStrength(c);
+                if (v < worstVal) { worstVal = v; worstIdx = i; }
+            });
+            cardIndex = worstIdx;
+            setEnemyEmotion('worried');
+        } else if (playerStrength >= 9) {
+            // Jogador jogou carta forte, adversário joga a mais forte
+            let bestIdx = 0, bestVal = -1;
+            GAME.enemyHand.forEach((c, i) => {
+                const v = getCardStrength(c);
+                if (v > bestVal) { bestVal = v; bestIdx = i; }
+            });
+            cardIndex = bestIdx;
+            const bestStrength = getCardStrength(GAME.enemyHand[bestIdx]);
+            if (bestStrength >= 100) setEnemyEmotion('confident');
+            else if (bestStrength > playerStrength) setEnemyEmotion('confident');
+            else setEnemyEmotion('worried');
+        } else {
+            // Tenta ganhar com a menor carta possível
+            const indexed = GAME.enemyHand.map((c, i) => ({ c, i, v: getCardStrength(c) }));
+            indexed.sort((a, b) => a.v - b.v);
+            let chosen = indexed[indexed.length - 1];
+            for (const item of indexed) {
+                if (item.v > playerStrength) { chosen = item; break; }
+            }
+            cardIndex = chosen.i;
+            
+            if (chosen.v > playerStrength) setEnemyEmotion('confident');
+            else if (Math.random() < 0.5) setEnemyEmotion('bluffing');
+            else setEnemyEmotion('worried');
+        }
+
+        const card = GAME.enemyHand.splice(cardIndex, 1)[0];
+        GAME.enemyTable.push(card);
+
+        const manilhaText = isManilha(card) ? ' ⭐MANILHA' : '';
+        addLog(`CPU: ${card.rank.name}${card.suit.symbol}${manilhaText}`, 'e');
+
+        // Animar adversário jogando a carta
+        const side = Math.random() < 0.5 ? 'left' : 'right';
+        animateOpponentPlayCard(side, () => {
+            // Carta voa da mão do adversário até a mesa
+            const startX = side === 'left' ? -0.6 : 0.6;
+            const animCard = animateCardToTable(card, startX, -2.5, 1.3, 0.6, 0, true, null);
+            cardsInScene.push(animCard);
+        });
+
+        // Animar cabeça (aceno)
+        animateOpponentHeadNod();
+
+        setTimeout(() => resolveTrick(), 1200);
+    }
+
+    function resolveTrick() {
+        const youCard = GAME.youTable[GAME.youTable.length - 1];
+        const enemyCard = GAME.enemyTable[GAME.enemyTable.length - 1];
+
+        if (!youCard || !enemyCard) return;
+
+        const youStrength = getCardStrength(youCard);
+        const enemyStrength = getCardStrength(enemyCard);
+
+        let winner = 'tie';
+        if (youStrength > enemyStrength) {
+            winner = 'you';
+            GAME.youTricks++;
+            setEnemyEmotion('worried');
+        } else if (enemyStrength > youStrength) {
+            winner = 'enemy';
+            GAME.enemyTricks++;
+            setEnemyEmotion('happy');
+        }
+
+        updateHUD();
+
+        if (winner === 'you') {
+            showMessage('✅ Você ganhou a vaza!', 1200);
+            addLog('→ Você ganhou a vaza!', 'p');
+        } else if (winner === 'enemy') {
+            showMessage('❌ CPU ganhou a vaza!', 1200);
+            addLog('→ CPU ganhou a vaza!', 'e');
+        } else {
+            showMessage('🤝 Empate!', 1200);
+            addLog('→ Empate!', 'i');
+        }
+
+        if (GAME.youTricks >= 2 || GAME.enemyTricks >= 2 || 
+            (GAME.youTricks + GAME.enemyTricks >= 3)) {
+            setTimeout(() => endRound(), 1800);
+        } else {
+            setTimeout(() => nextTrick(), 1800);
+        }
+    }
+
+    function nextTrick() {
+        setTimeout(() => {
+            clearCardsFromScene();
+            
+            // Re-adicionar a vira
+            if (GAME.vira) {
+                const viraGroup = createCard3D(GAME.vira, 2.5, -1.5, true);
+                scene.add(viraGroup);
+                cardsInScene.push(viraGroup);
+            }
+            
+            // Cartas restantes do adversário (na mão dele)
+            for (let i = 0; i < GAME.enemyHand.length; i++) {
+                const angle = -0.3 + i * 0.3;
+                const x = -1.2 + i * 0.4;
+                const card = createCard3D(GAME.enemyHand[i], x, -2.5, false);
+                card.rotation.y = angle;
+                card.position.y = 1.3;
+                scene.add(card);
+                cardsInScene.push(card);
+            }
+        }, 900);
+
+        GAME.playerTurn = true;
+        GAME.trucoAvailable = true;
+        setEnemyEmotion('neutral');
+        updateHUD();
+        renderHand();
+    }
+
+    function endRound() {
+        let roundWinner;
+        if (GAME.youTricks > GAME.enemyTricks) {
+            roundWinner = 'you';
+            GAME.youScore += GAME.handValue;
+            setEnemyEmotion('angry');
+        } else if (GAME.enemyTricks > GAME.youTricks) {
+            roundWinner = 'enemy';
+            GAME.enemyScore += GAME.handValue;
+            setEnemyEmotion('happy');
+        } else {
+            roundWinner = 'tie';
+            setEnemyEmotion('neutral');
+        }
+
+        updateHUD();
+
+        if (roundWinner === 'you') {
+            showMessage(`🏆 Você ganhou a rodada! +${GAME.handValue}`, 2500);
+            addLog(`🏆 Você venceu! +${GAME.handValue}`, 'p');
+        } else if (roundWinner === 'enemy') {
+            showMessage(`😢 CPU ganhou a rodada! +${GAME.handValue}`, 2500);
+            addLog(`😢 CPU venceu! +${GAME.handValue}`, 'e');
+        } else {
+            showMessage('🤝 Rodada empatada!', 2500);
+        }
+
+        setTimeout(() => {
+            if (GAME.youScore >= 12 || GAME.enemyScore >= 12) {
+                endGame();
+            } else {
+                GAME.round++;
+                startRound();
+            }
+        }, 2800);
+    }
+
+    function endGame() {
+        GAME.gameOver = true;
+        if (GAME.youScore >= 12) {
+            showMessage(`🎉 VOCÊ VENCEU! ${GAME.youScore} x ${GAME.enemyScore}`, 0);
+            setEnemyEmotion('angry');
+        } else {
+            showMessage(`💀 CPU VENCEU! ${GAME.enemyScore} x ${GAME.youScore}`, 0);
+            setEnemyEmotion('happy');
+        }
+        updateHUD();
+        renderHand();
+    }
+
+    // ==================== TRUCO ====================
+    btnTruco.addEventListener('click', () => {
+        if (!GAME.trucoAvailable || GAME.trucoCalled || !GAME.playerTurn) return;
+        
+        GAME.trucoCalled = true;
+        GAME.trucoAvailable = false;
+        GAME.waitingResponse = true;
+        GAME.playerTurn = false;
+
+        updateHUD();
+        showMessage('🔥 Você gritou TRUCO!', 1500);
+        addLog('🔥 Você gritou TRUCO!', 'p');
+
+        // Adversário fica surpreso
+        setEnemyEmotion('worried');
+        animateOpponentHeadNod();
+
+        setTimeout(() => {
+            const hasManilha = GAME.enemyHand.some(c => isManilha(c));
+            const strengths = GAME.enemyHand.map(c => getCardStrength(c));
+            const avgStrength = strengths.reduce((a, b) => a + b, 0) / strengths.length;
+            const maxStrength = Math.max(...strengths);
+            
+            let shouldAccept = false;
+            if (hasManilha) { shouldAccept = true; setEnemyEmotion('confident'); }
+            else if (maxStrength >= 9) { shouldAccept = true; setEnemyEmotion('confident'); }
+            else if (avgStrength >= 6.5) { shouldAccept = true; setEnemyEmotion('bluffing'); }
+            else if (Math.random() < 0.4) { shouldAccept = true; setEnemyEmotion('bluffing'); }
+            else { setEnemyEmotion('worried'); }
+
+            if (shouldAccept) {
+                GAME.handValue = GAME.handValue === 1 ? 3 : GAME.handValue === 3 ? 6 : 9;
+                GAME.waitingResponse = false;
+                GAME.playerTurn = true;
+                GAME.trucoAvailable = true;
+                updateHUD();
+                showMessage(`✅ CPU ACEITOU! Mão vale ${GAME.handValue}`, 2000);
+                addLog(`CPU aceitou! Vale ${GAME.handValue}`, 'e');
+                animateOpponentHeadNod();
+                renderHand();
+            } else {
+                GAME.youScore += GAME.handValue;
+                GAME.waitingResponse = false;
+                updateHUD();
+                showMessage(`🏃 CPU CORREU! +${GAME.handValue} pontos`, 2000);
+                addLog(`CPU correu! +${GAME.handValue}`, 'p');
+                setTimeout(() => {
+                    if (GAME.youScore >= 12) {
+                        endGame();
+                    } else {
+                        GAME.round++;
+                        startRound();
+                    }
+                }, 2200);
+            }
+        }, 1800);
+    });
+
+    btnAccept.addEventListener('click', () => {
+        if (!GAME.waitingResponse) return;
+        GAME.waitingResponse = false;
+    });
+
+    btnRun.addEventListener('click', () => {
+        if (!GAME.waitingResponse) return;
+        GAME.waitingResponse = false;
+    });
+
+    // ==================== LOOP DE ANIMAÇÃO 3D ====================
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // Suavizar câmera
+        camX += (targetCamX - camX) * 0.06;
+        camY += (targetCamY - camY) * 0.06;
+
+        const time = clock.getElapsedTime();
+        const bobY = Math.sin(time * 1.2) * 0.02;
+
+        camera.position.x = camX * 0.8;
+        camera.position.y = 2.8 + camY * 0.4 + bobY;
+        camera.position.z = 5;
+        camera.lookAt(camX * 0.3, 1.2 + camY * 0.2, -1);
+
+        // Atualizar expressão e respiração do adversário
+        updateOpponentFace();
+
+        renderer.render(scene, camera);
+    }
+
+    // ==================== RESET ====================
+    btnReset.addEventListener('click', () => {
+        messageEl.style.display = 'none';
+        startGame();
+    });
+
+    // ==================== INICIAR ====================
+    function init() {
+        initThree();
+        animate();
+        
+        setTimeout(() => {
+            loadingEl.style.display = 'none';
+            startGame();
+        }, 500);
+    }
+
+    init();
+
+})();
+</script>
+</body>
+</html>
