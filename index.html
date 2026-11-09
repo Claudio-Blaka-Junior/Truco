@@ -141,7 +141,7 @@
         filter: drop-shadow(0 15px 25px rgba(255,215,0,0.9)) brightness(1.1);
     }
     .card-3d.is-manilha::before {
-        content: '⭐ MANILHA';
+        content: '⭐ MANIA';
         position: absolute; top: -12px; left: 50%;
         transform: translateX(-50%);
         background: linear-gradient(180deg, #ffd700, #c9a227);
@@ -342,7 +342,7 @@
     <div class="hud">
         <div class="round-info">
             <div>🃏 Rodada: <span id="roundNum">1</span> / 3</div>
-            <div>🏆 Vazas: <span class="you" id="youTricks">0</span> - <span class="enemy" id="enemyTricks">0</span></div>
+            <div>🏆 Cartadas: <span class="you" id="youTricks">0</span> - <span class="enemy" id="enemyTricks">0</span></div>
         </div>
 
         <div class="score">
@@ -359,7 +359,7 @@
         <div class="vira-info">
             <div class="label">🎴 VIRA</div>
             <div id="viraCard" class="vira-card"></div>
-            <div class="manilha-info">Manilha: <span id="manilhaRank">—</span></div>
+            <div class="manilha-info">Mania: <span id="manilhaRank">—</span></div>
         </div>
 
         <div class="enemy-emotion" id="enemyEmotion">🤖 Adversário: Neutro</div>
@@ -1385,7 +1385,8 @@
         GAME.trucoCalled = false;
         GAME.trucoAvailable = true;
         GAME.waitingResponse = false;
-        GAME.playerTurn = true;
+        // Rodadas ímpares: você começa. Rodadas pares: o BOT começa.
+        GAME.playerTurn = (GAME.round % 2 === 1);
         GAME.youTable = [];
         GAME.enemyTable = [];
 
@@ -1400,7 +1401,7 @@
         GAME.enemyHand = allCards.slice(3, 6);
 
         addLog(`🎴 Rodada ${GAME.round}`, 'i');
-        addLog(`Vira: ${GAME.vira.rank.name}${GAME.vira.suit.symbol} → Manilha: ${GAME.manilhaRank}`, 'i');
+        addLog(`Vira: ${GAME.vira.rank.name}${GAME.vira.suit.symbol} → Mania: ${GAME.manilhaRank}`, 'i');
 
         // Vira na mesa 3D (à direita)
         const viraGroup = createCard3D(GAME.vira, 2.5, -1.5, true);
@@ -1423,6 +1424,11 @@
         renderVira();
         renderHand();
         showMessage(`🃏 RODADA ${GAME.round} - MÃO VALE ${GAME.handValue}`, 1500);
+
+        // Se o BOT começa a rodada, ele joga a primeira carta
+        if (!GAME.playerTurn) {
+            setTimeout(() => enemyLead(), 1800);
+        }
     }
 
     function playCard(index) {
@@ -1433,7 +1439,7 @@
         GAME.youTable.push(card);
         GAME.playerTurn = false;
 
-        const manilhaText = isManilha(card) ? ' ⭐MANILHA' : '';
+        const manilhaText = isManilha(card) ? ' ⭐MANIA' : '';
         addLog(`Você: ${card.rank.name}${card.suit.symbol}${manilhaText}`, 'p');
 
         renderHand();
@@ -1455,7 +1461,53 @@
             }
         }, 300);
 
-        setTimeout(() => enemyPlay(), 1100);
+        // Se o BOT já jogou nesta vaza (ele abriu), resolve direto; senão o BOT responde
+        if (GAME.enemyTable.length >= GAME.youTable.length) {
+            setTimeout(() => resolveTrick(), 1100);
+        } else {
+            setTimeout(() => enemyPlay(), 1100);
+        }
+    }
+
+    // BOT abre a vaza (joga primeiro)
+    function enemyLead() {
+        if (GAME.gameOver) return;
+        if (GAME.playerTurn) return;
+        if (GAME.waitingResponse) return;
+        if (GAME.enemyHand.length === 0) return;
+        if (GAME.enemyTable.length > GAME.youTable.length) return;
+
+        // Joga a carta de força intermediária
+        const sorted = GAME.enemyHand
+            .map((c, i) => ({ c, i, v: getCardStrength(c) }))
+            .sort((a, b) => a.v - b.v);
+        const chosen = sorted[Math.floor(sorted.length / 2)];
+
+        const card = GAME.enemyHand.splice(chosen.i, 1)[0];
+        GAME.enemyTable.push(card);
+
+        if (chosen.v >= 9) setEnemyEmotion('confident');
+        else setEnemyEmotion('bluffing');
+
+        const manilhaText = isManilha(card) ? ' ⭐MANIA' : '';
+        addLog(`CPU: ${card.rank.name}${card.suit.symbol}${manilhaText}`, 'e');
+
+        const side = Math.random() < 0.5 ? 'left' : 'right';
+        animateOpponentPlayCard(side, () => {
+            const startX = side === 'left' ? -0.6 : 0.6;
+            const animCard = animateCardToTable(card, startX, -2.5, 1.3, 0.6, 0, true, null);
+            cardsInScene.push(animCard);
+        });
+
+        animateOpponentHeadNod();
+
+        // Depois que o BOT joga, é a sua vez de responder
+        setTimeout(() => {
+            if (GAME.gameOver) return;
+            GAME.playerTurn = true;
+            updateHUD();
+            renderHand();
+        }, 1300);
     }
 
     function enemyPlay() {
@@ -1469,7 +1521,7 @@
         let cardIndex = 0;
 
         if (playerHasManilha) {
-            // Se o jogador jogou manilha, adversário joga a mais fraca
+            // Se o jogador jogou mania, adversário joga a mais fraca
             let worstIdx = 0, worstVal = 999;
             GAME.enemyHand.forEach((c, i) => {
                 const v = getCardStrength(c);
@@ -1507,7 +1559,7 @@
         const card = GAME.enemyHand.splice(cardIndex, 1)[0];
         GAME.enemyTable.push(card);
 
-        const manilhaText = isManilha(card) ? ' ⭐MANILHA' : '';
+        const manilhaText = isManilha(card) ? ' ⭐MANIA' : '';
         addLog(`CPU: ${card.rank.name}${card.suit.symbol}${manilhaText}`, 'e');
 
         // Animar adversário jogando a carta
@@ -1548,11 +1600,11 @@
         updateHUD();
 
         if (winner === 'you') {
-            showMessage('✅ Você ganhou a vaza!', 1200);
-            addLog('→ Você ganhou a vaza!', 'p');
+            showMessage('✅ Você ganhou a cartada!', 1200);
+            addLog('→ Você ganhou a cartada!', 'p');
         } else if (winner === 'enemy') {
-            showMessage('❌ CPU ganhou a vaza!', 1200);
-            addLog('→ CPU ganhou a vaza!', 'e');
+            showMessage('❌ CPU ganhou a cartada!', 1200);
+            addLog('→ CPU ganhou a cartada!', 'e');
         } else {
             showMessage('🤝 Empate!', 1200);
             addLog('→ Empate!', 'i');
