@@ -341,7 +341,7 @@
 
     <div class="hud">
         <div class="round-info">
-            <div>🃏 Rodada: <span id="roundNum">1</span> / 3</div>
+            <div>🃏 Rodada: <span id="roundNum">1</span></div>
             <div>🏆 Cartadas: <span class="you" id="youTricks">0</span> - <span class="enemy" id="enemyTricks">0</span></div>
         </div>
 
@@ -428,6 +428,8 @@
         vira: null,
         manilhaRank: null,
         logMessages: [],
+        epoch: 0,
+        trickResults: [],
         enemyEmotion: 'neutral' // neutral, confident, worried, angry, happy, bluffing
     };
 
@@ -1034,13 +1036,16 @@
             const mood = GAME.enemyEmotion;
             if (mood === 'happy') {
                 opponentMouth.scale.set(1.3, 1.5, 1);
+                opponentMouth.rotation.z = 0;
                 opponentMouth.position.y = -0.15;
             } else if (mood === 'worried' || mood === 'angry') {
                 opponentMouth.scale.set(0.9, 0.8, 1);
+                opponentMouth.rotation.z = 0;
                 opponentMouth.position.y = -0.18;
             } else if (mood === 'confident' || mood === 'bluffing') {
                 opponentMouth.scale.set(1.1, 1, 1);
                 opponentMouth.rotation.z = 0.15;
+                opponentMouth.position.y = -0.16;
             } else {
                 opponentMouth.scale.set(1, 1, 1);
                 opponentMouth.rotation.z = 0;
@@ -1352,18 +1357,30 @@
         ).join('');
     }
 
+    let messageTimer = null;
     function showMessage(text, duration = 2000) {
         messageEl.textContent = text;
         messageEl.style.display = 'block';
+        clearTimeout(messageTimer);
         if (duration > 0) {
-            setTimeout(() => {
+            messageTimer = setTimeout(() => {
                 messageEl.style.display = 'none';
             }, duration);
         }
     }
 
+    // setTimeout que é ignorado se o jogo foi reiniciado enquanto esperava
+    function later(fn, ms) {
+        const epoch = GAME.epoch;
+        setTimeout(() => {
+            if (epoch !== GAME.epoch) return;
+            fn();
+        }, ms);
+    }
+
     // ==================== LÓGICA DO JOGO ====================
     function startGame() {
+        GAME.epoch++;
         GAME.youScore = 0;
         GAME.enemyScore = 0;
         GAME.round = 1;
@@ -1389,6 +1406,7 @@
         GAME.playerTurn = (GAME.round % 2 === 1);
         GAME.youTable = [];
         GAME.enemyTable = [];
+        GAME.trickResults = [];
 
         clearCardsFromScene();
         setEnemyEmotion('neutral');
@@ -1427,7 +1445,7 @@
 
         // Se o BOT começa a rodada, ele joga a primeira carta
         if (!GAME.playerTurn) {
-            setTimeout(() => enemyLead(), 1800);
+            later(() => enemyLead(), 1800);
         }
     }
 
@@ -1451,7 +1469,7 @@
 
         // Adversário reage - emoção baseada na carta jogada
         const playerStrength = getCardStrength(card);
-        setTimeout(() => {
+        later(() => {
             if (playerStrength >= 100) {
                 setEnemyEmotion('worried');
             } else if (playerStrength >= 9) {
@@ -1463,9 +1481,9 @@
 
         // Se o BOT já jogou nesta vaza (ele abriu), resolve direto; senão o BOT responde
         if (GAME.enemyTable.length >= GAME.youTable.length) {
-            setTimeout(() => resolveTrick(), 1100);
+            later(() => resolveTrick(), 1100);
         } else {
-            setTimeout(() => enemyPlay(), 1100);
+            later(() => enemyPlay(), 1100);
         }
     }
 
@@ -1502,7 +1520,7 @@
         animateOpponentHeadNod();
 
         // Depois que o BOT joga, é a sua vez de responder
-        setTimeout(() => {
+        later(() => {
             if (GAME.gameOver) return;
             GAME.playerTurn = true;
             updateHUD();
@@ -1574,7 +1592,26 @@
         // Animar cabeça (aceno)
         animateOpponentHeadNod();
 
-        setTimeout(() => resolveTrick(), 1200);
+        later(() => resolveTrick(), 1200);
+    }
+
+    // Regras de empate do truco:
+    // - empatou a 1ª: quem vencer a 2ª leva a mão (se empatar de novo, vale a 3ª)
+    // - empatou a 2ª ou a 3ª: leva quem venceu a 1ª
+    // - empatou todas: ninguém pontua
+    // Retorna 'you', 'enemy', 'tie' (mão empatada) ou null (a mão continua)
+    function getHandWinner(r) {
+        const n = r.length;
+        if (n < 2) return null;
+        if (n === 2) {
+            if (r[0] !== 'tie' && r[1] === 'tie') return r[0];
+            if (r[0] === 'tie' && r[1] !== 'tie') return r[1];
+            if (r[0] !== 'tie' && r[0] === r[1]) return r[0];
+            return null;
+        }
+        if (r[2] !== 'tie') return r[2];
+        if (r[0] !== 'tie') return r[0];
+        return 'tie';
     }
 
     function resolveTrick() {
@@ -1597,6 +1634,7 @@
             setEnemyEmotion('happy');
         }
 
+        GAME.trickResults.push(winner);
         updateHUD();
 
         if (winner === 'you') {
@@ -1610,16 +1648,16 @@
             addLog('→ Empate!', 'i');
         }
 
-        if (GAME.youTricks >= 2 || GAME.enemyTricks >= 2 || 
-            (GAME.youTricks + GAME.enemyTricks >= 3)) {
-            setTimeout(() => endRound(), 1800);
+        const handWinner = getHandWinner(GAME.trickResults);
+        if (handWinner !== null) {
+            later(() => endRound(handWinner), 1800);
         } else {
-            setTimeout(() => nextTrick(), 1800);
+            later(() => nextTrick(), 1800);
         }
     }
 
     function nextTrick() {
-        setTimeout(() => {
+        later(() => {
             clearCardsFromScene();
             
             // Re-adicionar a vira
@@ -1641,21 +1679,24 @@
             }
         }, 900);
 
-        GAME.playerTurn = true;
+        // Quem abriu a rodada abre todas as cartadas dela:
+        // rodadas ímpares: eu-bot-eu-bot | rodadas pares: bot-eu-bot-eu
+        GAME.playerTurn = (GAME.round % 2 === 1);
         GAME.trucoAvailable = true;
         setEnemyEmotion('neutral');
         updateHUD();
         renderHand();
+
+        if (!GAME.playerTurn) {
+            later(() => enemyLead(), 1200);
+        }
     }
 
-    function endRound() {
-        let roundWinner;
-        if (GAME.youTricks > GAME.enemyTricks) {
-            roundWinner = 'you';
+    function endRound(roundWinner) {
+        if (roundWinner === 'you') {
             GAME.youScore += GAME.handValue;
             setEnemyEmotion('angry');
-        } else if (GAME.enemyTricks > GAME.youTricks) {
-            roundWinner = 'enemy';
+        } else if (roundWinner === 'enemy') {
             GAME.enemyScore += GAME.handValue;
             setEnemyEmotion('happy');
         } else {
@@ -1675,7 +1716,7 @@
             showMessage('🤝 Rodada empatada!', 2500);
         }
 
-        setTimeout(() => {
+        later(() => {
             if (GAME.youScore >= 12 || GAME.enemyScore >= 12) {
                 endGame();
             } else {
@@ -1715,7 +1756,7 @@
         setEnemyEmotion('worried');
         animateOpponentHeadNod();
 
-        setTimeout(() => {
+        later(() => {
             const hasManilha = GAME.enemyHand.some(c => isManilha(c));
             const strengths = GAME.enemyHand.map(c => getCardStrength(c));
             const avgStrength = strengths.reduce((a, b) => a + b, 0) / strengths.length;
@@ -1744,7 +1785,7 @@
                 updateHUD();
                 showMessage(`🏃 CPU CORREU! +${GAME.handValue} pontos`, 2000);
                 addLog(`CPU correu! +${GAME.handValue}`, 'p');
-                setTimeout(() => {
+                later(() => {
                     if (GAME.youScore >= 12) {
                         endGame();
                     } else {
@@ -1756,15 +1797,9 @@
         }, 1800);
     });
 
-    btnAccept.addEventListener('click', () => {
-        if (!GAME.waitingResponse) return;
-        GAME.waitingResponse = false;
-    });
-
-    btnRun.addEventListener('click', () => {
-        if (!GAME.waitingResponse) return;
-        GAME.waitingResponse = false;
-    });
+    // Aceitar/Correr não alteram o estado: quem responde ao truco é a CPU
+    btnAccept.addEventListener('click', () => {});
+    btnRun.addEventListener('click', () => {});
 
     // ==================== LOOP DE ANIMAÇÃO 3D ====================
     function animate() {
